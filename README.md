@@ -1,0 +1,154 @@
+Multivendor Tool
+================
+
+CLI en Python para tareas de inventario, respaldo y configuracion en redes multivendor (Cisco, Huawei, Fortinet, HPE, Nokia). El estado de cada equipo se guarda en SQLite para permitir reanudacion segura de corridas largas y exportes posteriores.
+
+Indice rapido
+-------------
+- Caracteristicas clave
+- Requisitos previos
+- Instalacion
+- Ejemplo de uso rapido
+- Archivo de configuracion
+- Comandos principales
+- Operaciones sobre SQLite
+- Buenas practicas y soluciones rapidas
+- Desarrollo y soporte
+
+Caracteristicas clave
+---------------------
+- `--dump`: guarda configuraciones, logs y metadatos del dispositivo.
+- `--scan`: genera inventario (hostname, version, interfaces con IP, VRF, sockets, ARP).
+- `--push`: aplica configuracion de syslog (Cisco IOS/IOS-XE/IOS-XR/NX-OS/ASA, Huawei VRP, Fortinet).
+- Reanudacion por host gracias a banderas `dump_done`, `scan_done`, `push_done`, `done` en la tabla `devices`.
+- Subcomandos `report`, `export` y `db` para reportes, CSV y consultas sobre la base.
+- Soporte para comentarios por corrida (`--comment`) que se almacenan en la BD.
+- Compatibilidad con conexion SSH legacy y deteccion automatica de prompt, incluso bajo banners extensos.
+
+Requisitos previos
+------------------
+- Python 3.10 o superior (probado en 3.12).
+- Acceso a los equipos via SSH o Telnet (segun vendor).
+- Paquetes Python del proyecto (`netmiko`, `ncclient`, `lxml`).
+- Opcional: `proxychains4` u otra herramienta de proxy si se necesita enrutar las conexiones.
+
+Instalacion
+-----------
+1. Clonar el repositorio:
+   ```bash
+   git clone https://github.com/tu-usuario/multivendor_tool.git
+   cd multivendor_tool
+   ```
+2. Crear y activar un entorno virtual:
+   - Linux / macOS:
+     ```bash
+     python3 -m venv .venv
+     source .venv/bin/activate
+     ```
+   - Windows (PowerShell):
+     ```powershell
+     python -m venv .venv
+     .venv\Scripts\Activate.ps1
+     ```
+3. Instalar dependencias:
+   ```bash
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+4. (Opcional) Instalar como script ejecutable:
+   ```bash
+   pip install -e .
+   ```
+   Esto expone el comando `mvtool` dentro del entorno virtual.
+
+Ejemplo de uso rapido
+---------------------
+1. Prepara un archivo de hosts (`hosts/example.txt`) con una IP o FQDN por linea.
+2. Crea un archivo de credenciales JSON (ver `creds/credentials.example.json`):
+   ```json
+   [
+     { "username": "user1", "password": "pass1", "secret": "" },
+     { "username": "user2", "password": "pass2", "secret": "enable" }
+   ]
+   ```
+3. Ejecuta una corrida completa (dump + scan + push):
+   ```bash
+   mvtool run \
+     --hosts-file hosts/example.txt \
+     --credentials-file creds/credentials.json \
+     --allops \
+     --syslog-ip 192.0.2.10 \
+     --comment "via proxy1"
+   ```
+4. Revisa los resultados en `mv_results/` (dumps, base SQLite, logs).
+
+Archivo de configuracion
+------------------------
+Puedes definir valores por defecto en `config/runconfig.json` y lanzarlos con `mvtool run --config config/runconfig.json`. Principales claves:
+
+| Clave               | Tipo      | Descripcion breve                                          |
+|---------------------|-----------|------------------------------------------------------------|
+| `hosts_file`        | string    | Ruta al archivo de hosts.                                 |
+| `credentials_file`  | string    | Ruta al JSON de credenciales.                             |
+| `outdir`            | string    | Directorio de salida (`mv_results` por defecto).           |
+| `workers`           | entero    | Paralelismo (se recomienda ajustar al entorno).           |
+| `retries`           | entero    | Intentos de reconexion Netmiko.                           |
+| `log_level`         | string    | `INFO`, `DEBUG`, etc.                                      |
+| `ssh_port`/`telnet_port` | entero | Puertos por defecto.                                     |
+| `dump`/`scan`/`push`/`allops` | boolean | Seleccion de operaciones.                         |
+| `syslog_ip`/`syslog_port` | string/int | Destino syslog para `--push`.                        |
+| `logging_source`    | string    | Interfaz o IP origen de syslog.                           |
+| `ssh_legacy`        | boolean   | Fuerza algoritmos y timeouts legacy.                      |
+| `cred_backoff`      | entero    | Delay entre credenciales problematica.                    |
+| `prefer_telnet`     | boolean   | Prueba Telnet antes de SSH.                               |
+| `comment`           | string    | Comentario para anotar la corrida.                        |
+| `no_prompt`         | boolean   | Desactiva reanudacion interactiva.                        |
+
+Comandos principales
+--------------------
+- `mvtool run`: procesa hosts segun los flags anteriores.
+  - `--dump`, `--scan`, `--push`, `--allops`, `--scan-only`.
+  - `--comment` guarda el contexto de la ejecucion en `devices.comment`.
+  - `--ssh-legacy` habilita compatibilidad con algoritmos antiguos.
+  - `--families-file` establece pistas para deteccion (Catalyst, Nexus, etc.).
+  - `--no-prompt` ejecuta sin preguntas interactivas.
+- `mvtool db`: operaciones sobre la base SQLite.
+  - `pending`, `counts`, `export-devices`, `export-inventory`, `backup`, `sql`, `reset`, `vacuum`, `migrate`.
+- `mvtool report`: imprime un resumen JSON con los conteos de `devices`.
+- `mvtool export`: genera un CSV combinado (`devices` + `inventory`).
+
+Operaciones sobre SQLite
+------------------------
+- Base por defecto: `<outdir>/mvtool.db`.
+- Listar pendientes: `mvtool db pending -d mv_results/mvtool.db --mode scan`.
+- Hosts sin completar (por bandera):
+  ```bash
+  mvtool db sql -d mv_results/mvtool.db \
+    --query "SELECT host FROM devices WHERE COALESCE(done,0)=0" \
+    --format txt -o hosts/pending.txt
+  ```
+- Export a CSV para ingesta externa:
+  ```bash
+  mvtool export -d mv_results/mvtool.db -o export/devices_inventory.csv
+  ```
+- Backup rapido: `mvtool db backup -d mv_results/mvtool.db -o backups/mvtool.bak.db`.
+
+Buenas practicas y soluciones rapidas
+-------------------------------------
+- Ajusta `workers` al limite de descriptores del sistema (en Kali suele ser 1024). Si ves `Too many open files`, reduce `workers` o eleva `ulimit -n`.
+- Para equipos con banners extensos (p. ej., Cisco IOS-XE), la deteccion reintenta automaticamente con un newline extra. En caso de necesitarlo, agrega `--ssh-legacy` y `--log-level DEBUG` para ver el detalle.
+- Si usas proxychains:
+  ```bash
+  proxychains4 -q -f proxys/proxy1.conf mvtool run --config config/runconfig.json --comment "via proxy1"
+  ```
+- Los archivos `dumps/` no se borran aunque una corrida posterior falle; sin embargo, las banderas `dump_done` y `scan_done` se recalculan segun el resultado mas reciente.
+
+Desarrollo y soporte
+--------------------
+- Ejecuta pruebas rapidas de estilo con `python -m compileall multivendor_tool`.
+- Para aportar cambios, crea un entorno limpio, haz commits descriptivos y abre un pull request.
+- Si encuentras un vendor sin soporte, comparte logs (`mv_results/run.log`) y la salida de `--log-level DEBUG`.
+
+Licencia
+--------
+Define la licencia que prefieras (por ejemplo MIT) antes de publicar el repositorio.

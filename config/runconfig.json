@@ -1,0 +1,21 @@
+{
+  "hosts_file": "../hosts/hosts.txt",
+  "credentials_file": "../creds/credentials.example.json",
+  "outdir": "../mv_results",
+  "workers": 30,
+  "retries": 2,
+  "log_level": "INFO",
+  "ssh_port": 22,
+  "telnet_port": 23,
+  "scan": true,
+  "dump": true,
+  "push": false,
+  "allops": false,
+  "syslog_ip": "10.0.0.1",
+  "syslog_port": 514,
+  "ssh_legacy": false,
+  "cred_backoff": 60,
+  "prefer_telnet": false,
+  "families_file": "families.txt",
+  "no_prompt": true
+}

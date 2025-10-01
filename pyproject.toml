@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multivendor-tool"
+version = "0.1.0"
+description = "Multivendor network dump/scan/push tool (Cisco, Huawei, Fortinet, HPE)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "netmiko>=4.2.0",
+  "ncclient>=0.6.13",
+  "lxml>=4.9.0",
+]
+
+[tool.setuptools]
+packages = [
+  "multivendor_tool",
+  "multivendor_tool.core",
+  "multivendor_tool.net",
+  "multivendor_tool.ops",
+  "multivendor_tool.vendors",
+]
+
+[tool.setuptools.package-dir]
+multivendor_tool = "."
+
+[project.scripts]
+mvtool = "multivendor_tool.cli:main"
