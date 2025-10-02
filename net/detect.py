@@ -45,7 +45,7 @@ def _ver_snippet(ver_txt: str) -> str:
                 return s
     return lines[0] if lines else ""
 
-def _try_connect_and_get_version(device_type: str, host: str, username: str, password: str, secret: str, port: int, legacy: bool = False, auth_cb: Optional[Callable[[str], None]] = None):
+def _try_connect_and_get_version(device_type: str, host: str, username: str, password: str, secret: str, port: int, legacy: bool = False, auth_cb: Optional[Callable[[str], None]] = None, logger=None):
     params = dict(
         device_type=device_type,
         host=host,
@@ -117,6 +117,8 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
     except (NetMikoTimeoutException, ValueError) as e:
         if not _prompt_retry_needed(e):
             raise
+        if logger:
+            logger.debug(f"[DETECT][SSH] prompt fallback for {host} ({device_type}) tras error: {str(e)[:160]}")
         fallback_params = dict(params)
         fallback_params["fast_cli"] = False
         fallback_params["global_delay_factor"] = max(int(fallback_params.get("global_delay_factor", 1) or 1), 5)
@@ -126,6 +128,8 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
         try:
             conn = ConnectHandler(**fallback_params)
         except Exception as e2:
+            if logger:
+                logger.debug(f"[DETECT][SSH] fallback connect failed para {host} ({device_type}): {str(e2)[:160]}")
             raise e2 from e
         params = fallback_params
         # En algunos equipos (Cisco IOS-XE) el banner deja la sesion "colgada" sin
@@ -137,6 +141,8 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
             conn.write_channel("\n")
             time.sleep(0.6)
             conn.read_until_pattern(pattern=r"[>#\]]", read_timeout=15)
+            if logger:
+                logger.debug(f"[DETECT][SSH] prompt obtenido tras fallback en {host} ({device_type})")
         except Exception:
             try:
                 conn.send_command_timing("", strip_prompt=False, strip_command=False)
@@ -202,7 +208,7 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
     last_exc = None
     for cand in candidates:
         try:
-            conn, ver_txt = _try_connect_and_get_version(cand, host, username, password, secret, port, legacy=legacy, auth_cb=auth_cb)
+            conn, ver_txt = _try_connect_and_get_version(cand, host, username, password, secret, port, legacy=legacy, auth_cb=auth_cb, logger=logger)
             if logger:
                 first = _ver_snippet(ver_txt)
                 logger.debug(f"[DETECT][SSH] cand={cand} host={host} ver='{first[:160]}'")
@@ -248,7 +254,7 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
                 new_conn = None
                 try:
                     new_conn, ver2 = _try_connect_and_get_version(
-                        final_device_type, host, username, password, secret, port, legacy=legacy, auth_cb=auth_cb
+                        final_device_type, host, username, password, secret, port, legacy=legacy, auth_cb=auth_cb, logger=logger
                     )
                     try:
                         conn.disconnect()
@@ -303,7 +309,7 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
                 try:
                     if logger:
                         logger.debug(f"[DETECT][SSH] retry legacy cand={cand} host={host}: {msg}")
-                    conn, ver_txt = _try_connect_and_get_version(cand, host, username, password, secret, port, legacy=True, auth_cb=auth_cb)
+                    conn, ver_txt = _try_connect_and_get_version(cand, host, username, password, secret, port, legacy=True, auth_cb=auth_cb, logger=logger)
                     retried = True
                     if logger:
                         first = _ver_snippet(ver_txt)
@@ -347,7 +353,7 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
                         new_conn = None
                         try:
                             new_conn, ver2 = _try_connect_and_get_version(
-                                final_device_type, host, username, password, secret, port, legacy=True, auth_cb=auth_cb
+                                final_device_type, host, username, password, secret, port, legacy=True, auth_cb=auth_cb, logger=logger
                             )
                             try:
                                 conn.disconnect()
@@ -416,7 +422,7 @@ def detect_platform_telnet(host: str, username: str, password: str, secret: str 
     last_exc = None
     for cand in candidates:
         try:
-            conn, ver_txt = _try_connect_and_get_version(cand, host, username, password, secret, port, auth_cb=auth_cb)
+            conn, ver_txt = _try_connect_and_get_version(cand, host, username, password, secret, port, auth_cb=auth_cb, logger=logger)
             if logger:
                 first = _ver_snippet(ver_txt)
                 logger.debug(f"[DETECT][TELNET] cand={cand} host={host} ver='{first[:160]}'")
@@ -460,7 +466,7 @@ def detect_platform_telnet(host: str, username: str, password: str, secret: str 
                     conn.disconnect()
                 except Exception:
                     pass
-                conn, ver_txt = _try_connect_and_get_version(final_device_type, host, username, password, secret, port)
+                conn, ver_txt = _try_connect_and_get_version(final_device_type, host, username, password, secret, port, logger=logger)
 
             pre_cmds = []
             if platform == "huawei":
