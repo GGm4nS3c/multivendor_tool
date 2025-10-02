@@ -58,6 +58,7 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
         auth_timeout=20,
         fast_cli=False,
     )
+    channel = "TELNET" if "telnet" in (device_type or "").lower() else "SSH"
     if legacy:
         params.update(
             {
@@ -113,8 +114,16 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
         )
 
     try:
+        if logger:
+            logger.debug(
+                f"[DETECT][{channel}] ConnectHandler device_type={device_type} host={host}:{port} legacy={legacy}"
+            )
         conn = ConnectHandler(**params)
+        if logger:
+            logger.debug(f"[DETECT][{channel}] Conexion establecida {host}:{port}")
     except (NetMikoTimeoutException, ValueError) as e:
+        if logger:
+            logger.debug(f"[DETECT][{channel}] ConnectHandler fallo: {str(e)[:200]}")
         if not _prompt_retry_needed(e):
             raise
         if logger:
@@ -161,10 +170,14 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
             pass
 
     def _send_with_fallback(command: str, timeout: int = 60) -> str:
+        if logger:
+            logger.debug(f"[DETECT][{channel}] ejecutando '{command}' (timeout {timeout}s)")
         try:
             return conn.send_command(command, read_timeout=timeout)
-        except Exception:
-            # Evitar dependencias de prompt en fase de detecciÃ³n
+        except Exception as exc:
+            if logger:
+                logger.debug(f"[DETECT][{channel}] send_command fallo: {type(exc).__name__}: {str(exc)[:200]}")
+            # Evitar dependencias de prompt en fase de detección
             try:
                 return conn.send_command_timing(command, strip_prompt=False, strip_command=False)
             except Exception:
@@ -188,6 +201,9 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
         ver_txt = _send_with_fallback("get system status", 60)
     else:
         ver_txt = _send_with_fallback("show version", 60)
+    if logger:
+        snippet = _ver_snippet(ver_txt)
+        logger.debug(f"[DETECT][{channel}] fragmento version='{snippet[:160]}'")
     return conn, ver_txt
 
 
@@ -208,6 +224,8 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
     last_exc = None
     for cand in candidates:
         try:
+            if logger:
+                logger.debug(f"[DETECT][SSH] intentando driver {cand} en {host}:{port}")
             conn, ver_txt = _try_connect_and_get_version(cand, host, username, password, secret, port, legacy=legacy, auth_cb=auth_cb, logger=logger)
             if logger:
                 first = _ver_snippet(ver_txt)
@@ -288,6 +306,11 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
                 commands = list(FORTI_CMDS)
             else:
                 commands = CMD_SETS.get(platform, CMD_SETS["ios"])  # default ios
+
+            if logger:
+                logger.debug(
+                    f"[DETECT][SSH] platform={platform} device_type={final_device_type} pre_cmds={'; '.join(pre_cmds) if pre_cmds else 'None'} cmds={'; '.join(commands)}"
+                )
 
             try:
                 conn.disconnect()
@@ -378,6 +401,10 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
                         commands = list(FORTI_CMDS)
                     else:
                         commands = CMD_SETS.get(platform, CMD_SETS["ios"])  # default ios
+                    if logger:
+                        logger.debug(
+                            f"[DETECT][SSH][legacy] platform={platform} device_type={final_device_type} pre_cmds={'; '.join(pre_cmds) if pre_cmds else 'None'} cmds={'; '.join(commands)}"
+                        )
                     try:
                         conn.disconnect()
                     except Exception:
@@ -422,6 +449,8 @@ def detect_platform_telnet(host: str, username: str, password: str, secret: str 
     last_exc = None
     for cand in candidates:
         try:
+            if logger:
+                logger.debug(f"[DETECT][TELNET] intentando driver {cand} en {host}:{port}")
             conn, ver_txt = _try_connect_and_get_version(cand, host, username, password, secret, port, auth_cb=auth_cb, logger=logger)
             if logger:
                 first = _ver_snippet(ver_txt)
@@ -449,8 +478,8 @@ def detect_platform_telnet(host: str, username: str, password: str, secret: str 
                     platform = "huawei"
                 elif "hp_comware" in cand:
                     platform = "hp"
-                elif "fortinet" in cand:
-                    platform = "fortinet"
+            elif "fortinet" in cand:
+                platform = "fortinet"
             if not platform:
                 try:
                     conn.disconnect()
@@ -488,6 +517,11 @@ def detect_platform_telnet(host: str, username: str, password: str, secret: str 
                 commands = list(FORTI_CMDS)
             else:
                 commands = CMD_SETS.get(platform, CMD_SETS["ios"])  # default ios
+
+            if logger:
+                logger.debug(
+                    f"[DETECT][TELNET] platform={platform} device_type={final_device_type} pre_cmds={'; '.join(pre_cmds) if pre_cmds else 'None'} cmds={'; '.join(commands)}"
+                )
 
             try:
                 conn.disconnect()

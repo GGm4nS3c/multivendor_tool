@@ -83,6 +83,10 @@ def process_host(host_entry, args, logger, outdir, cred_sets, db_path, families_
     # Pre-check TCP
     ssh_ok = tcp_open(host, ssh_port, timeout=3.0)
     telnet_ok = tcp_open(host, args.telnet_port, timeout=3.0)
+    if logger:
+        logger.debug(
+            f"[{host}] Pre-check resultados: ssh_port={ssh_port} ssh_ok={ssh_ok} | telnet_port={args.telnet_port} telnet_ok={telnet_ok}"
+        )
     try:
         dbmod.mark_status(db_conn, host, ssh_open=int(ssh_ok), telnet_open=int(telnet_ok), updated_at=now())
     except Exception:
@@ -236,6 +240,8 @@ def process_host(host_entry, args, logger, outdir, cred_sets, db_path, families_
         # Preferir Telnet si se pidió
         if args.prefer_telnet and telnet_ok and det is None:
             try:
+                if logger:
+                    logger.debug(f"[{host}] Preferencia Telnet: iniciando deteccion via telnet")
                 det = detect_platform_telnet(
                     host=host,
                     username=username,
@@ -257,6 +263,8 @@ def process_host(host_entry, args, logger, outdir, cred_sets, db_path, families_
         # SSH detection
         if ssh_ok and det is None:
             try:
+                if logger:
+                    logger.debug(f"[{host}] Intentando deteccion via SSH")
                 det = detect_platform(
                     host=host,
                     username=username,
@@ -307,6 +315,8 @@ def process_host(host_entry, args, logger, outdir, cred_sets, db_path, families_
         # Telnet detection (multi-vendor) — se omite si venimos de AUTH en SSH y no se permite fallback
         if telnet_ok and det is None and not locals().get('skip_telnet_due_to_auth', False):
             try:
+                if logger:
+                    logger.debug(f"[{host}] Intentando deteccion via Telnet")
                 det = detect_platform_telnet(
                     host=host,
                     username=username,
@@ -432,6 +442,10 @@ def process_host(host_entry, args, logger, outdir, cred_sets, db_path, families_
 
         platform = det["platform"]
         device_type = det["device_type"]
+        if logger:
+            logger.debug(
+                f"[{host}] Deteccion resuelta: platform={platform} device_type={device_type} via={used_proto} pre_cmds={len(det.get('pre_cmds') or [])} cmds={len(det.get('commands') or [])}"
+            )
         dbmod.mark_status(
             db_conn,
             host,
@@ -892,6 +906,7 @@ def main():
 
     # cmd == run
     if args.cmd == "run":
+        eprint(f"=== MVTool v{__version__} === {now()}")
         # Cargar configuración (si existe) y aplicar valores por defecto
         try:
             from .core.config import load_run_config
@@ -951,7 +966,8 @@ def main():
     logger.handlers.clear()
     logger.addHandler(fh)
     logger.addHandler(ch)
-    # Silenciar trazas de Paramiko ("Exception (client)") y reducir ruido de Netmiko
+    comment_txt = getattr(args, "comment", "") or ""
+    logger.info(f"MVTool v{__version__} iniciado comment='{comment_txt}'")
     try:
         for name in (
             "paramiko",
