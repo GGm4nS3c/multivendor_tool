@@ -1,6 +1,8 @@
 import re
 from typing import Dict, Optional, Callable
 
+import time
+
 from netmiko import ConnectHandler
 try:
     from netmiko.exceptions import NetMikoTimeoutException
@@ -104,30 +106,37 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
         )
     def _prompt_retry_needed(exc: Exception) -> bool:
         msg = str(exc)
-        if "Pattern not detected" in msg or "Search pattern never" in msg:
-            return True
-        return False
+        return (
+            "Pattern not detected" in msg
+            or "Search pattern never" in msg
+            or "Timed out trying to read" in msg
+        )
 
     try:
         conn = ConnectHandler(**params)
-    except NetMikoTimeoutException as e:
+    except (NetMikoTimeoutException, ValueError) as e:
         if not _prompt_retry_needed(e):
             raise
         fallback_params = dict(params)
         fallback_params["fast_cli"] = False
-        fallback_params["global_delay_factor"] = max(int(fallback_params.get("global_delay_factor", 1) or 1), 2)
-        fallback_params["conn_timeout"] = max(int(fallback_params.get("conn_timeout", 20) or 20), 30)
-        fallback_params["banner_timeout"] = max(int(fallback_params.get("banner_timeout", 20) or 20), 45)
-        fallback_params["auth_timeout"] = max(int(fallback_params.get("auth_timeout", 20) or 20), 60)
-        conn = ConnectHandler(**fallback_params)
+        fallback_params["global_delay_factor"] = max(int(fallback_params.get("global_delay_factor", 1) or 1), 5)
+        fallback_params["conn_timeout"] = max(int(fallback_params.get("conn_timeout", 20) or 20), 45)
+        fallback_params["banner_timeout"] = max(int(fallback_params.get("banner_timeout", 20) or 20), 60)
+        fallback_params["auth_timeout"] = max(int(fallback_params.get("auth_timeout", 20) or 20), 80)
+        try:
+            conn = ConnectHandler(**fallback_params)
+        except Exception as e2:
+            raise e2 from e
         params = fallback_params
+        # En algunos equipos (Cisco IOS-XE) el banner deja la sesion "colgada" sin
+        # prompt hasta que se envian ENTERs extra. Forzamos dos retornos y
+        # esperamos al prompt real antes de continuar con la deteccion.
         try:
             conn.write_channel("\n")
-        except Exception:
-            pass
-        # Intentar leer hasta prompt para limpiar banners largos
-        try:
-            conn.read_until_pattern(pattern=r"[>#\]]")
+            time.sleep(0.6)
+            conn.write_channel("\n")
+            time.sleep(0.6)
+            conn.read_until_pattern(pattern=r"[>#\]]", read_timeout=15)
         except Exception:
             try:
                 conn.send_command_timing("", strip_prompt=False, strip_command=False)
