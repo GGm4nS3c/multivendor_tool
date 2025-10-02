@@ -129,11 +129,15 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
             conn.read_until_pattern(pattern=r"[>#\]]", read_timeout=15)
             if logger:
                 logger.debug(f"[DETECT][{channel}] prompt tras newline")
-        except Exception:
+        except Exception as exc:
+            if logger:
+                logger.debug(f"[DETECT][{channel}] newline primer fallo: {type(exc).__name__}: {str(exc)[:200]}")
             try:
                 conn.send_command_timing("", strip_prompt=False, strip_command=False)
-            except Exception:
-                pass
+            except Exception as exc2:
+                if logger:
+                    logger.debug(f"[DETECT][{channel}] send_command_timing tras newline fallo: {type(exc2).__name__}: {str(exc2)[:200]}")
+                return ""
     except (NetMikoTimeoutException, ValueError) as e:
         if logger:
             logger.debug(f"[DETECT][{channel}] ConnectHandler fallo: {str(e)[:200]}")
@@ -190,9 +194,12 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
         except Exception as exc:
             if logger:
                 logger.debug(f"[DETECT][{channel}] send_command fallo: {type(exc).__name__}: {str(exc)[:200]}")
-            # Evitar dependencias de prompt en fase de detección
             try:
                 return conn.send_command_timing(command, strip_prompt=False, strip_command=False)
+            except Exception as exc2:
+                if logger:
+                    logger.debug(f"[DETECT][{channel}] send_command_timing fallo: {type(exc2).__name__}: {str(exc2)[:200]}")
+                return ""
             except Exception:
                 return ""
 
