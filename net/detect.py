@@ -56,7 +56,7 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
         conn_timeout=20,
         banner_timeout=20,
         auth_timeout=20,
-        fast_cli=True,
+        fast_cli=False,
     )
     if legacy:
         params.update(
