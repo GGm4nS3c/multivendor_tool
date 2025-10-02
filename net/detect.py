@@ -1,14 +1,11 @@
 import re
 from typing import Dict, Optional, Callable
-
 import time
-
 from netmiko import ConnectHandler
 try:
     from netmiko.exceptions import NetMikoTimeoutException
 except Exception:  # pragma: no cover - compat Netmiko < 4
     from netmiko.ssh_exception import NetMikoTimeoutException  # type: ignore
-
 from ..vendors.commands import (
     DEVICE_TYPES,
     DEVICE_TYPES_TELNET,
@@ -23,8 +20,6 @@ from ..vendors.commands import (
     FORTI_PRE_CMDS,
     CMD_SETS,
 )
-
-
 def _ver_snippet(ver_txt: str) -> str:
     """Extract a concise 'version' line for logging.
     Tries common patterns (Huawei VRP, Fortinet, etc.), falls back to first non-empty line.
@@ -44,7 +39,6 @@ def _ver_snippet(ver_txt: str) -> str:
             if re.search(pat, s, re.IGNORECASE):
                 return s
     return lines[0] if lines else ""
-
 def _try_connect_and_get_version(device_type: str, host: str, username: str, password: str, secret: str, port: int, legacy: bool = False, auth_cb: Optional[Callable[[str], None]] = None, logger=None):
     params = dict(
         device_type=device_type,
@@ -112,7 +106,6 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
             or "Search pattern never" in msg
             or "Timed out trying to read" in msg
         )
-
     try:
         if logger:
             logger.debug(
@@ -136,7 +129,6 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
                 conn.send_command_timing("", strip_prompt=False, strip_command=False)
             except Exception as exc2:
                 if logger:
-                    logger.debug(f"[DETECT][{channel}] send_command_timing tras newline fallo: {type(exc2).__name__}: {str(exc2)[:200]}")
                 return ""
     except (NetMikoTimeoutException, ValueError) as e:
         if logger:
@@ -185,7 +177,6 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
             conn.enable()
         except Exception:
             pass
-
     def _send_with_fallback(command: str, timeout: int = 60) -> str:
         if logger:
             logger.debug(f"[DETECT][{channel}] ejecutando '{command}' (timeout {timeout}s)")
@@ -200,9 +191,6 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
                 if logger:
                     logger.debug(f"[DETECT][{channel}] send_command_timing fallo: {type(exc2).__name__}: {str(exc2)[:200]}")
                 return ""
-            except Exception:
-                return ""
-
     # Elegir comando de versión según driver (incluye variantes _telnet)
     if ("huawei" in device_type) or (device_type == "hp_comware"):
         ver_txt = _send_with_fallback("display version", 60)
@@ -225,22 +213,19 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
         snippet = _ver_snippet(ver_txt)
         logger.debug(f"[DETECT][{channel}] fragmento version='{snippet[:160]}'")
     return conn, ver_txt
-
-
 def detect_platform(host: str, username: str, password: str, secret: str = "", port: int = 22, vendor_hint: Optional[str] = None, families_keywords: Optional[Dict[str, str]] = None, logger=None, legacy: bool = False, auth_cb: Optional[Callable[[str], None]] = None) -> Dict:
     candidates = []
     if vendor_hint == "huawei":
         candidates = ["huawei"]
     elif vendor_hint == "cisco":
-        candidates = ["cisco_ios", "cisco_xr", "cisco_nxos", "cisco_asa"]
+        candidates = ["cisco_xe", "cisco_ios", "cisco_xr", "cisco_nxos", "cisco_asa"]
     elif vendor_hint == "fortinet":
         candidates = ["fortinet"]
     elif vendor_hint == "hp":
         candidates = ["hp_comware"]
     else:
         # Orden solicitado: Cisco -> Huawei -> Fortinet -> demás (HP)
-        candidates = ["cisco_ios", "huawei", "fortinet", "hp_comware"]
-
+        candidates = ["cisco_xe", "cisco_ios", "huawei", "fortinet", "hp_comware"]
     last_exc = None
     for cand in candidates:
         try:
@@ -250,7 +235,6 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
             if logger:
                 first = _ver_snippet(ver_txt)
                 logger.debug(f"[DETECT][SSH] cand={cand} host={host} ver='{first[:160]}'")
-
             # Clasificación por contenido de versión primero (más fiable que el driver)
             platform = None
             for rx, plat in PLATFORM_PATTERNS:
@@ -285,7 +269,6 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
                 if logger:
                     logger.debug(f"[DETECT][SSH] sin match con cand={cand}, probando siguiente")
                 continue
-
             final_device_type = DEVICE_TYPES.get(platform, cand)
             if final_device_type != cand:
                 # Intentar reconectar con el driver final; si falla, conservar el driver original
@@ -304,7 +287,6 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
                     if logger:
                         logger.debug(f"[DETECT][SSH] switch driver to {final_device_type} failed, keep {cand}: {e_sw}")
                     final_device_type = cand
-
             pre_cmds = []
             if platform == "huawei":
                 # Detectar VRP antiguo (3.x) desde la segunda línea
@@ -326,17 +308,14 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
                 commands = list(FORTI_CMDS)
             else:
                 commands = CMD_SETS.get(platform, CMD_SETS["ios"])  # default ios
-
             if logger:
                 logger.debug(
                     f"[DETECT][SSH] platform={platform} device_type={final_device_type} pre_cmds={'; '.join(pre_cmds) if pre_cmds else 'None'} cmds={'; '.join(commands)}"
                 )
-
             try:
                 conn.disconnect()
             except Exception:
                 pass
-
             return {
                 "platform": platform,
                 "device_type": final_device_type,
@@ -390,7 +369,6 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
                         if logger:
                             logger.debug(f"[DETECT][SSH][legacy] sin match con cand={cand}, probando siguiente")
                         continue
-
                     final_device_type = DEVICE_TYPES.get(platform, cand)
                     if final_device_type != cand:
                         new_conn = None
@@ -408,7 +386,6 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
                             if logger:
                                 logger.debug(f"[DETECT][SSH][legacy] switch driver to {final_device_type} failed, keep {cand}: {e_sw}")
                             final_device_type = cand
-
                     pre_cmds = []
                     if platform == "huawei":
                         pre_cmds = list(HUAWEI_PRE_CMDS)
@@ -442,12 +419,9 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
             if not retried:
                 last_exc = e
                 continue
-
     if last_exc:
         raise last_exc
     raise RuntimeError("No se pudo detectar la plataforma")
-
-
 def detect_platform_telnet(host: str, username: str, password: str, secret: str = "", port: int = 23, vendor_hint: Optional[str] = None, families_keywords: Optional[Dict[str, str]] = None, logger=None, auth_cb: Optional[Callable[[str], None]] = None) -> Dict:
     """Detección por Telnet probando device_types _telnet conocidos."""
     if vendor_hint == "huawei":
@@ -465,7 +439,6 @@ def detect_platform_telnet(host: str, username: str, password: str, secret: str 
             DEVICE_TYPES_TELNET.get("nokia"),
         ]
     candidates = [c for c in candidates if c]
-
     last_exc = None
     for cand in candidates:
         try:
@@ -475,7 +448,6 @@ def detect_platform_telnet(host: str, username: str, password: str, secret: str 
             if logger:
                 first = _ver_snippet(ver_txt)
                 logger.debug(f"[DETECT][TELNET] cand={cand} host={host} ver='{first[:160]}'")
-
             # Clasificación por contenido de versión primero
             platform = None
             for rx, plat in PLATFORM_PATTERNS:
@@ -508,7 +480,6 @@ def detect_platform_telnet(host: str, username: str, password: str, secret: str 
                 if logger:
                     logger.debug(f"[DETECT][TELNET] sin match con cand={cand}, probando siguiente")
                 continue
-
             final_device_type = DEVICE_TYPES_TELNET.get(platform, cand)
             if final_device_type != cand:
                 try:
@@ -516,7 +487,6 @@ def detect_platform_telnet(host: str, username: str, password: str, secret: str 
                 except Exception:
                     pass
                 conn, ver_txt = _try_connect_and_get_version(final_device_type, host, username, password, secret, port, logger=logger)
-
             pre_cmds = []
             if platform == "huawei":
                 is_legacy = False
@@ -537,17 +507,14 @@ def detect_platform_telnet(host: str, username: str, password: str, secret: str 
                 commands = list(FORTI_CMDS)
             else:
                 commands = CMD_SETS.get(platform, CMD_SETS["ios"])  # default ios
-
             if logger:
                 logger.debug(
                     f"[DETECT][TELNET] platform={platform} device_type={final_device_type} pre_cmds={'; '.join(pre_cmds) if pre_cmds else 'None'} cmds={'; '.join(commands)}"
                 )
-
             try:
                 conn.disconnect()
             except Exception:
                 pass
-
             return {
                 "platform": platform,
                 "device_type": final_device_type,
@@ -558,7 +525,6 @@ def detect_platform_telnet(host: str, username: str, password: str, secret: str 
         except Exception as e:
             last_exc = e
             continue
-
     if last_exc:
         raise last_exc
     raise RuntimeError("No se pudo detectar la plataforma por Telnet")

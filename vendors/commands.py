@@ -8,6 +8,14 @@ CMD_SETS = {
         "show startup-config",
         "show logging",
     ],
+    "ios_xe": [
+        "terminal length 0",
+        "terminal width 511",
+        "show version",
+        "show running-config",
+        "show startup-config",
+        "show logging",
+    ],
     "nxos": [
         "terminal length 0",
         "show version",
@@ -94,6 +102,7 @@ FORTI_CMDS = [
 DEVICE_TYPES = {
     # Cisco
     "ios": "cisco_ios",
+    "ios_xe": "cisco_xe",
     "nxos": "cisco_nxos",
     "iosxr": "cisco_xr",
     "asa": "cisco_asa",
@@ -122,7 +131,7 @@ DEVICE_TYPES_TELNET = {
 
 PLATFORM_PATTERNS = [
     # Cisco
-    (r"(?i)Cisco IOS XE Software|IOS-?XE", "ios"),
+    (r"(?i)Cisco IOS XE Software|IOS-?XE", "ios_xe"),
     (r"(?i)Cisco IOS Software|IOS \(tm\)", "ios"),
     (r"(?i)NX-OS|Cisco Nexus Operating System", "nxos"),
     (r"(?i)IOS XR|XR Software", "iosxr"),
