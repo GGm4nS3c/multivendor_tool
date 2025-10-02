@@ -2,10 +2,37 @@ import re
 from typing import Dict, Optional, Callable
 import time
 from netmiko import ConnectHandler
+from netmiko import ssh_dispatcher
 try:
     from netmiko.exceptions import NetMikoTimeoutException
 except Exception:  # pragma: no cover - compat Netmiko < 4
     from netmiko.ssh_exception import NetMikoTimeoutException  # type: ignore
+CISCO_XE_NOPREP = None
+PRIMARY_CISCO_DRIVER = CISCO_XE_NOPREP or "cisco_xe"
+try:
+    _cls = ssh_dispatcher.CLASS_MAPPER_BASE.get('cisco_xe')
+    if _cls:
+        class CiscoXENoPrep(_cls):
+            def session_preparation(self):
+                try:
+                    self._test_channel_read()
+                except Exception:
+                    pass
+                try:
+                    self.set_base_prompt()
+                except Exception:
+                    pass
+                try:
+                    self.disable_paging(command='terminal length 0')
+                except Exception:
+                    pass
+        ssh_dispatcher.CLASS_MAPPER_BASE['cisco_xe_noprep'] = CiscoXENoPrep
+        ssh_dispatcher.CLASS_MAPPER['cisco_xe_noprep'] = CiscoXENoPrep
+        CISCO_XE_NOPREP = "cisco_xe_noprep"
+except Exception:
+    CISCO_XE_NOPREP = None
+PRIMARY_CISCO_DRIVER = CISCO_XE_NOPREP or "cisco_xe"
+
 from ..vendors.commands import (
     DEVICE_TYPES,
     DEVICE_TYPES_TELNET,
@@ -220,14 +247,14 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
     if vendor_hint == "huawei":
         candidates = ["huawei"]
     elif vendor_hint == "cisco":
-        candidates = ["cisco_xe", "cisco_ios", "cisco_xr", "cisco_nxos", "cisco_asa"]
+        candidates = [PRIMARY_CISCO_DRIVER, "cisco_ios", "cisco_xr", "cisco_nxos", "cisco_asa"]
     elif vendor_hint == "fortinet":
         candidates = ["fortinet"]
     elif vendor_hint == "hp":
         candidates = ["hp_comware"]
     else:
         # Orden solicitado: Cisco -> Huawei -> Fortinet -> demás (HP)
-        candidates = ["cisco_xe", "cisco_ios", "huawei", "fortinet", "hp_comware"]
+        candidates = [PRIMARY_CISCO_DRIVER, "cisco_ios", "huawei", "fortinet", "hp_comware"]
     last_exc = None
     for cand in candidates:
         try:
@@ -271,7 +298,10 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
                 if logger:
                     logger.debug(f"[DETECT][SSH] sin match con cand={cand}, probando siguiente")
                 continue
-            final_device_type = DEVICE_TYPES.get(platform, cand)
+            if platform == "ios_xe" and CISCO_XE_NOPREP:
+                final_device_type = CISCO_XE_NOPREP
+            else:
+                final_device_type = DEVICE_TYPES.get(platform, cand)
             if final_device_type != cand:
                 # Intentar reconectar con el driver final; si falla, conservar el driver original
                 new_conn = None
@@ -371,7 +401,10 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
                         if logger:
                             logger.debug(f"[DETECT][SSH][legacy] sin match con cand={cand}, probando siguiente")
                         continue
-                    final_device_type = DEVICE_TYPES.get(platform, cand)
+                    if platform == "ios_xe" and CISCO_XE_NOPREP:
+                        final_device_type = CISCO_XE_NOPREP
+                    else:
+                        final_device_type = DEVICE_TYPES.get(platform, cand)
                     if final_device_type != cand:
                         new_conn = None
                         try:
