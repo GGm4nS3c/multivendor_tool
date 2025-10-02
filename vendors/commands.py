@@ -102,7 +102,7 @@ FORTI_CMDS = [
 DEVICE_TYPES = {
     # Cisco
     "ios": "cisco_ios",
-    "ios_xe": "cisco_xe",
+    "ios_xe": "cisco_xe_noprep",
     "nxos": "cisco_nxos",
     "iosxr": "cisco_xr",
     "asa": "cisco_asa",

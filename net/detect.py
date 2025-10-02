@@ -7,11 +7,12 @@ try:
     from netmiko.exceptions import NetMikoTimeoutException
 except Exception:  # pragma: no cover - compat Netmiko < 4
     from netmiko.ssh_exception import NetMikoTimeoutException  # type: ignore
-CISCO_XE_NOPREP = None
 try:
-    _cls = ssh_dispatcher.CLASS_MAPPER_BASE.get('cisco_xe')
-    if _cls:
-        class CiscoXENoPrep(_cls):
+    _xe_base = ssh_dispatcher.CLASS_MAPPER_BASE.get('cisco_xe')
+    if _xe_base is None:
+        _xe_base = ssh_dispatcher.CLASS_MAPPER_BASE.get('cisco_ios')
+    if _xe_base:
+        class CiscoXENoPrep(_xe_base):
             def session_preparation(self):
                 try:
                     self._test_channel_read()
@@ -27,10 +28,12 @@ try:
                     pass
         ssh_dispatcher.CLASS_MAPPER_BASE['cisco_xe_noprep'] = CiscoXENoPrep
         ssh_dispatcher.CLASS_MAPPER['cisco_xe_noprep'] = CiscoXENoPrep
-        CISCO_XE_NOPREP = "cisco_xe_noprep"
+        PRIMARY_CISCO_DRIVER = 'cisco_xe_noprep'
+    else:
+        PRIMARY_CISCO_DRIVER = 'cisco_ios'
 except Exception:
-    CISCO_XE_NOPREP = None
-PRIMARY_CISCO_DRIVER = CISCO_XE_NOPREP or "cisco_xe"
+    PRIMARY_CISCO_DRIVER = 'cisco_ios'
+
 
 from ..vendors.commands import (
     DEVICE_TYPES,
@@ -279,7 +282,7 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
                     if kw in t:
                         platform = plat
                         break
-            # Fallback al candidato si aún no hay match
+            # Fallback al candidato si a�n no hay match
             if not platform:
                 if cand == "huawei":
                     platform = "huawei"
@@ -287,7 +290,6 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
                     platform = "hp"
                 elif cand == "fortinet":
                     platform = "fortinet"
-            # Sin match: probar siguiente candidato
             if not platform:
                 try:
                     conn.disconnect()
@@ -296,12 +298,11 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
                 if logger:
                     logger.debug(f"[DETECT][SSH] sin match con cand={cand}, probando siguiente")
                 continue
-            if platform == "ios_xe" and CISCO_XE_NOPREP:
-                final_device_type = CISCO_XE_NOPREP
+            if platform == "ios_xe":
+                final_device_type = PRIMARY_CISCO_DRIVER
             else:
                 final_device_type = DEVICE_TYPES.get(platform, cand)
             if final_device_type != cand:
-                # Intentar reconectar con el driver final; si falla, conservar el driver original
                 new_conn = None
                 try:
                     new_conn, ver2 = _try_connect_and_get_version(
@@ -317,108 +318,6 @@ def detect_platform(host: str, username: str, password: str, secret: str = "", p
                     if logger:
                         logger.debug(f"[DETECT][SSH] switch driver to {final_device_type} failed, keep {cand}: {e_sw}")
                     final_device_type = cand
-            pre_cmds = []
-            if platform == "huawei":
-                # Detectar VRP antiguo (3.x) desde la segunda línea
-                is_legacy = False
-                try:
-                    ver_line = "\n".join((ver_txt or "").splitlines()[:3])
-                    m = re.search(r"VRP\s*(?:\(R\)\s*)?software,\s*Version\s*([0-9]+)\.", ver_line, re.I)
-                    if m and int(m.group(1)) <= 3:
-                        is_legacy = True
-                except Exception:
-                    is_legacy = False
-                pre_cmds = list(HUAWEI_PRE_CMDS_LEGACY if is_legacy else HUAWEI_PRE_CMDS)
-                commands = list(HUAWEI_CMDS)
-            elif platform == "hp":
-                pre_cmds = list(HP_PRE_CMDS)
-                commands = list(HP_CMDS)
-            elif platform == "fortinet":
-                pre_cmds = list(FORTI_PRE_CMDS)
-                commands = list(FORTI_CMDS)
-            else:
-                commands = CMD_SETS.get(platform, CMD_SETS["ios"])  # default ios
-            if logger:
-                logger.debug(
-                    f"[DETECT][SSH] platform={platform} device_type={final_device_type} pre_cmds={'; '.join(pre_cmds) if pre_cmds else 'None'} cmds={'; '.join(commands)}"
-                )
-            try:
-                conn.disconnect()
-            except Exception:
-                pass
-            return {
-                "platform": platform,
-                "device_type": final_device_type,
-                "raw_version": ver_txt,
-                "pre_cmds": pre_cmds,
-                "commands": commands,
-            }
-        except Exception as e:
-            # Reintento puntual con 'legacy' si el error sugiere problema de negociación SSH
-            msg = str(e)
-            retried = False
-            if not legacy and any(s in msg for s in ["Error reading SSH protocol banner", "kex", "no matching key exchange", "cipher"]):
-                try:
-                    if logger:
-                        logger.debug(f"[DETECT][SSH] retry legacy cand={cand} host={host}: {msg}")
-                    conn, ver_txt = _try_connect_and_get_version(cand, host, username, password, secret, port, legacy=True, auth_cb=auth_cb, logger=logger)
-                    retried = True
-                    if logger:
-                        first = _ver_snippet(ver_txt)
-                        logger.debug(f"[DETECT][SSH][legacy] cand={cand} host={host} ver='{first[:160]}'")
-                    # continuar flujo normal después del reintento exitoso
-                    # Determinar plataforma por contenido de versión (preferente)
-                    platform = None
-                    for rx, plat in PLATFORM_PATTERNS:
-                        if re.search(rx, ver_txt or ""):
-                            platform = plat
-                            break
-                    if not platform:
-                        for rx, plat in MODEL_HINTS:
-                            if re.search(rx, ver_txt or ""):
-                                platform = plat
-                                break
-                    if not platform and families_keywords:
-                        t = (ver_txt or "").upper()
-                        for kw, plat in families_keywords.items():
-                            if kw in t:
-                                platform = plat
-                                break
-                    if not platform:
-                        if cand == "huawei":
-                            platform = "huawei"
-                        elif cand == "hp_comware":
-                            platform = "hp"
-                        elif cand == "fortinet":
-                            platform = "fortinet"
-                    if not platform:
-                        try:
-                            conn.disconnect()
-                        except Exception:
-                            pass
-                        if logger:
-                            logger.debug(f"[DETECT][SSH][legacy] sin match con cand={cand}, probando siguiente")
-                        continue
-                    if platform == "ios_xe" and CISCO_XE_NOPREP:
-                        final_device_type = CISCO_XE_NOPREP
-                    else:
-                        final_device_type = DEVICE_TYPES.get(platform, cand)
-                    if final_device_type != cand:
-                        new_conn = None
-                        try:
-                            new_conn, ver2 = _try_connect_and_get_version(
-                                final_device_type, host, username, password, secret, port, legacy=True, auth_cb=auth_cb, logger=logger
-                            )
-                            try:
-                                conn.disconnect()
-                            except Exception:
-                                pass
-                            conn = new_conn
-                            ver_txt = ver2 or ver_txt
-                        except Exception as e_sw:
-                            if logger:
-                                logger.debug(f"[DETECT][SSH][legacy] switch driver to {final_device_type} failed, keep {cand}: {e_sw}")
-                            final_device_type = cand
                     pre_cmds = []
                     if platform == "huawei":
                         pre_cmds = list(HUAWEI_PRE_CMDS)
