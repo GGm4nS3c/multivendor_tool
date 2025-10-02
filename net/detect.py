@@ -8,7 +8,6 @@ try:
 except Exception:  # pragma: no cover - compat Netmiko < 4
     from netmiko.ssh_exception import NetMikoTimeoutException  # type: ignore
 CISCO_XE_NOPREP = None
-PRIMARY_CISCO_DRIVER = CISCO_XE_NOPREP or "cisco_xe"
 try:
     _cls = ssh_dispatcher.CLASS_MAPPER_BASE.get('cisco_xe')
     if _cls:
@@ -138,7 +137,6 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
             logger.debug(
                 f"[DETECT][{channel}] ConnectHandler device_type={device_type} host={host}:{port} legacy={legacy}"
             )
-        params["session_preparation"] = False  # evitar terminal width 511 en Netmiko
         conn = ConnectHandler(**params)
         if logger:
             logger.debug(f"[DETECT][{channel}] Conexion establecida {host}:{port}")
