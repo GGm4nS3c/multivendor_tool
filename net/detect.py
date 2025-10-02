@@ -126,9 +126,10 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
             if logger:
                 logger.debug(f"[DETECT][{channel}] newline primer fallo: {type(exc).__name__}: {str(exc)[:200]}")
             try:
-                conn.send_command_timing("", strip_prompt=False, strip_command=False)
+                return conn.send_command_timing("", strip_prompt=False, strip_command=False)
             except Exception as exc2:
                 if logger:
+                    logger.debug(f"[DETECT][{channel}] send_command_timing tras newline fallo: {type(exc2).__name__}: {str(exc2)[:200]}")
                 return ""
     except (NetMikoTimeoutException, ValueError) as e:
         if logger:
