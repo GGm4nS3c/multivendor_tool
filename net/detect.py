@@ -121,6 +121,19 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
         conn = ConnectHandler(**params)
         if logger:
             logger.debug(f"[DETECT][{channel}] Conexion establecida {host}:{port}")
+        try:
+            conn.write_channel("\n")
+            time.sleep(0.5)
+            conn.write_channel("\n")
+            time.sleep(0.5)
+            conn.read_until_pattern(pattern=r"[>#\]]", read_timeout=15)
+            if logger:
+                logger.debug(f"[DETECT][{channel}] prompt tras newline")
+        except Exception:
+            try:
+                conn.send_command_timing("", strip_prompt=False, strip_command=False)
+            except Exception:
+                pass
     except (NetMikoTimeoutException, ValueError) as e:
         if logger:
             logger.debug(f"[DETECT][{channel}] ConnectHandler fallo: {str(e)[:200]}")
