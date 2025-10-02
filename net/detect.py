@@ -111,6 +111,7 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
             logger.debug(
                 f"[DETECT][{channel}] ConnectHandler device_type={device_type} host={host}:{port} legacy={legacy}"
             )
+        params["session_preparation"] = False  # evitar terminal width 511 en Netmiko
         conn = ConnectHandler(**params)
         if logger:
             logger.debug(f"[DETECT][{channel}] Conexion establecida {host}:{port}")
