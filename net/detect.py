@@ -306,8 +306,7 @@ def _try_connect_and_get_version(device_type: str, host: str, username: str, pas
             if platform == "huawei":
                 is_legacy = False
                 try:
-                    ver_line = "
-".join((ver_txt or "").splitlines()[:3])
+                    ver_line = "\n".join((ver_txt or "").splitlines()[:3])
                     m = re.search(r"VRP\s*(?:\(R\)\s*)?software,\s*Version\s*([0-9]+)\.", ver_line, re.I)
                     if m and int(m.group(1)) <= 3:
                         is_legacy = True
