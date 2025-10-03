@@ -61,8 +61,7 @@ def _classify_connection(conn, ver_txt, cand, host, port, legacy_flag, auth_cb, 
     if platform == "huawei":
         is_legacy = False
         try:
-            ver_line = "
-".join((ver_txt or "").splitlines()[:3])
+            ver_line = "\n".join((ver_txt or "").splitlines()[:3])
             m = re.search(r"VRP\s*(?:\(R\)\s*)?software,\s*Version\s*([0-9]+)\.", ver_line, re.I)
             if m and int(m.group(1)) <= 3:
                 is_legacy = True
